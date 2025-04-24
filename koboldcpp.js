@@ -1,3 +1,4 @@
+import { textgenerationwebui_settings, textgen_types } from '../../../textgen-settings.js';
 import { getRequestHeaders } from '../../../../script.js';
 import { getBase64Async } from '../../../utils.js';
 export { KoboldCppSttProvider };
@@ -16,8 +17,11 @@ class KoboldCppSttProvider {
     };
 
     get settingsHtml() {
-        let html = '<div>Requires KoboldCpp 1.67 or later. See the <a href="https://github.com/LostRuins/koboldcpp/releases/tag/v1.67" target="_blank">release notes</a> for more information.</div>';
-        html += '<div><i>Hint: Set KoboldCpp URL in the API connection settings (under Text Completion!)</i></div>';
+        let html = '<div>Requires KoboldCpp 1.67 or later. See the ';
+        html += '<a href="https://github.com/LostRuins/koboldcpp/releases/tag/v1.67" ';
+        html += 'target="_blank">release notes</a> for more information.</div>';
+        html += '<div><i>Hint: Set KoboldCpp URL in the API connection settings ';
+        html += '(under Text Completion!)</i></div>';
         return html;
     }
 
@@ -60,24 +64,28 @@ class KoboldCppSttProvider {
 
         const headers = getRequestHeaders();
         headers['Content-Type'] = 'application/json';
-    
-        const apiResult = await fetch('/api/extra/transcribe', {
-            method:  'POST',
-            headers: headers,
-            body:    JSON.stringify(payload),
+
+        const server = textgenerationwebui_settings
+                        .server_urls[textgen_types.KOBOLDCPP];
+        const url = `${server}/api/extra/transcribe`;
+
+        const apiResult = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
         });
-    
+
         if (!apiResult.ok) {
-            const txt = await apiResult.text();
-            toastr.error(txt, 'STT Generation Failed (KoboldCpp)', {
-                timeOut:         10000,
-                extendedTimeOut: 20000,
-                preventDuplicates: true
-            });
-            throw new Error(`HTTP ${apiResult.status}: ${txt}`);
+        const txt = await apiResult.text();
+        toastr.error(txt, 'STT Generation Failed (KoboldCpp)', {
+            timeOut: 10000,
+            extendedTimeOut: 20000,
+            preventDuplicates: true
+        });
+        throw new Error(`HTTP ${apiResult.status}: ${txt}`);
         }
-    
+
         const result = await apiResult.json();
         return result.text;
-    }   
+    }
 }
