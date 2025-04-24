@@ -1,5 +1,5 @@
-import { textgenerationwebui_settings, textgen_types } from '../../../textgen-settings.js';
 import { getRequestHeaders } from '../../../../script.js';
+import { getBase64Async } from '../../../utils.js';
 export { KoboldCppSttProvider };
 
 const DEBUG_PREFIX = '<Speech Recognition module (KoboldCpp)> ';
@@ -47,38 +47,37 @@ class KoboldCppSttProvider {
     }
 
     async processAudio(audioBlob) {
-        const server = textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP];
-
-        if (!server) {
-            toastr.error('KoboldCpp server URL is not set.');
-            throw new Error('KoboldCpp server URL is not set.');
-        }
-
-        const requestData = new FormData();
-        requestData.append('file', audioBlob, 'record.wav');
-        if (this.settings.language) {
-            requestData.append('language', this.settings.language);
-        }
+        const base64WithPrefix = await getBase64Async(audioBlob);
     
+        const base64Audio = base64WithPrefix.split(',')[1];
+    
+        const payload = {
+            prompt:              '',
+            suppress_non_speech: false,
+            langcode:            this.settings.language || 'auto',
+            audio_data:          base64Audio,
+        };
+
         const headers = getRequestHeaders();
-        delete headers['Content-Type'];
-        const apiResult = await fetch(`${server.replace(/\/+$/, '')}/v1/audio/transcriptions`, {
-            method: 'POST',
-            headers,
-            body: requestData,
+        headers['Content-Type'] = 'application/json';
+    
+        const apiResult = await fetch('/api/extra/transcribe', {
+            method:  'POST',
+            headers: headers,
+            body:    JSON.stringify(payload),
         });
     
         if (!apiResult.ok) {
-            const errText = await apiResult.text();
-            toastr.error(errText, 'STT Generation Failed (KoboldCpp)', {
-                timeOut:        10000,
-                extendedTimeOut:20000,
+            const txt = await apiResult.text();
+            toastr.error(txt, 'STT Generation Failed (KoboldCpp)', {
+                timeOut:         10000,
+                extendedTimeOut: 20000,
                 preventDuplicates: true
             });
-            throw new Error(`HTTP ${apiResult.status}: ${errText}`);
+            throw new Error(`HTTP ${apiResult.status}: ${txt}`);
         }
     
         const result = await apiResult.json();
         return result.text;
-    }    
+    }   
 }
