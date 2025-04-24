@@ -50,30 +50,35 @@ class KoboldCppSttProvider {
         const server = textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP];
 
         if (!server) {
-            toastr.error('KoboldCpp server URL is not set.',);
+            toastr.error('KoboldCpp server URL is not set.');
             throw new Error('KoboldCpp server URL is not set.');
         }
 
         const requestData = new FormData();
-        requestData.append('file',  audioBlob, 'record.wav');
-        requestData.append('language', this.settings.language);
-
-        // It's not a JSON, let fetch set the content type
+        requestData.append('file', audioBlob, 'record.wav');
+        if (this.settings.language) {
+            requestData.append('language', this.settings.language);
+        }
+    
         const headers = getRequestHeaders();
         delete headers['Content-Type'];
-
-        const apiResult = await fetch('/v1/audio/transcriptions', {
+        const apiResult = await fetch(`${server.replace(/\/+$/, '')}/v1/audio/transcriptions`, {
             method: 'POST',
-            headers: headers,
+            headers,
             body: requestData,
         });
-
+    
         if (!apiResult.ok) {
-            toastr.error(apiResult.statusText, 'STT Generation Failed  (KoboldCpp)', { timeOut: 10000, extendedTimeOut: 20000, preventDuplicates: true });
-            throw new Error(`HTTP ${apiResult.status}: ${await apiResult.text()}`);
+            const errText = await apiResult.text();
+            toastr.error(errText, 'STT Generation Failed (KoboldCpp)', {
+                timeOut:        10000,
+                extendedTimeOut:20000,
+                preventDuplicates: true
+            });
+            throw new Error(`HTTP ${apiResult.status}: ${errText}`);
         }
-
+    
         const result = await apiResult.json();
         return result.text;
-    }
+    }    
 }
