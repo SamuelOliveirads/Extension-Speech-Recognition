@@ -55,15 +55,14 @@ class KoboldCppSttProvider {
         }
 
         const requestData = new FormData();
-        requestData.append('avatar', audioBlob, 'record.wav');
+        requestData.append('file',  audioBlob, 'record.wav');
         requestData.append('language', this.settings.language);
-        requestData.append('server', server);
 
         // It's not a JSON, let fetch set the content type
         const headers = getRequestHeaders();
         delete headers['Content-Type'];
 
-        const apiResult = await fetch('/api/backends/kobold/transcribe-audio', {
+        const apiResult = await fetch('/v1/audio/transcriptions', {
             method: 'POST',
             headers: headers,
             body: requestData,
