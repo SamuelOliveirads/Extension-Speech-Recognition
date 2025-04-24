@@ -50,42 +50,111 @@ class KoboldCppSttProvider {
         console.debug(DEBUG_PREFIX + 'KoboldCpp STT settings loaded');
     }
 
-    async processAudio(audioBlob) {
-        const base64WithPrefix = await getBase64Async(audioBlob);
-    
-        const base64Audio = base64WithPrefix.split(',')[1];
-    
-        const payload = {
-            prompt:              '',
-            suppress_non_speech: false,
-            langcode:            this.settings.language || 'auto',
-            audio_data:          base64Audio,
+    // --- Helper: encode AudioBuffer como WAV PCM16 LE @16 000Hz ---
+    encodeWAV(buffer) {
+        const numChan = buffer.numberOfChannels;
+        const length  = buffer.length * numChan * 2 + 44;
+        const view    = new DataView(new ArrayBuffer(length));
+        let offset    = 0;
+        const writeString = s => {
+          for (let i = 0; i < s.length; i++) {
+            view.setUint8(offset++, s.charCodeAt(i));
+          }
         };
+    
+        // RIFF header
+        writeString('RIFF');
+        view.setUint32(offset, length - 8, true); offset += 4;
+        writeString('WAVE');
+        // fmt subchunk
+        writeString('fmt ');
+        view.setUint32(offset, 16, true); offset += 4;       // Subchunk1Size
+        view.setUint16(offset, 1, true);  offset += 2;       // PCM
+        view.setUint16(offset, numChan, true); offset += 2;   // NumChannels
+        view.setUint32(offset, 16000, true); offset += 4;     // SampleRate
+        const byteRate = 16000 * numChan * 2;
+        view.setUint32(offset, byteRate, true); offset += 4;  // ByteRate
+        view.setUint16(offset, numChan * 2, true); offset += 2; // BlockAlign
+        view.setUint16(offset, 16, true); offset += 2;        // BitsPerSample
+        // data subchunk
+        writeString('data');
+        view.setUint32(offset, buffer.length * numChan * 2, true);
+        offset += 4;
+    
+        const interleaved = new Float32Array(buffer.length * numChan);
+        for (let ch = 0; ch < numChan; ch++) {
+          buffer.getChannelData(ch).forEach((v, i) => {
+            interleaved[i * numChan + ch] = v;
+          });
+        }
+        for (let i = 0; i < interleaved.length; i++, offset += 2) {
+          let s = Math.max(-1, Math.min(1, interleaved[i]));
+          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+    
+        return view.buffer;
+      }
+    
+      async resampleTo16kWav(blob) {
+        const origBuf = await blob.arrayBuffer();
+        const ctx     = new AudioContext();
+        const audio   = await ctx.decodeAudioData(origBuf);
+    
+        const offCtx = new OfflineAudioContext(
+          audio.numberOfChannels,
+          Math.ceil(audio.duration * 16000),
+          16000
+        );
+        const src = offCtx.createBufferSource();
+        src.buffer = audio;
+        src.connect(offCtx.destination);
+        src.start(0);
+        const rendered = await offCtx.startRendering();
+    
+        const wavBuffer = this.encodeWAV(rendered);
+        return new Blob([wavBuffer], { type: 'audio/wav' });
+    }
 
-        const headers = getRequestHeaders();
-        headers['Content-Type'] = 'application/json';
-
-        const server = textgenerationwebui_settings
-                        .server_urls[textgen_types.KOBOLDCPP];
-        const url = `${server}extra/transcribe`;
-
-        const apiResult = await fetch(url, {
+    async processAudio(audioBlob) {
+      const wav16kBlob = await this.resampleTo16kWav(audioBlob);
+  
+      const dataUrl     = await getBase64Async(wav16kBlob);
+      const base64Audio = dataUrl.split(',')[1];
+  
+      const payload = {
+        prompt:              '',
+        suppress_non_speech: false,
+        langcode:            this.settings.language || 'auto',
+        audio_data:          base64Audio,
+      };
+  
+      const headers = getRequestHeaders();
+      headers['Content-Type'] = 'application/json';
+  
+      const server = textgenerationwebui_settings
+                          .server_urls[textgen_types.KOBOLDCPP];
+      const url       = `${server}extra/transcribe`;
+  
+      console.debug(DEBUG_PREFIX, 'Calling STT at:', url);
+  
+      const apiResult = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
-        });
-
-        if (!apiResult.ok) {
+      });
+  
+      if (!apiResult.ok) {
         const txt = await apiResult.text();
         toastr.error(txt, 'STT Generation Failed (KoboldCpp)', {
-            timeOut: 10000,
-            extendedTimeOut: 20000,
-            preventDuplicates: true
+          timeOut:         10000,
+          extendedTimeOut: 20000,
+          preventDuplicates: true
         });
         throw new Error(`HTTP ${apiResult.status}: ${txt}`);
-        }
-
-        const result = await apiResult.json();
-        return result.text;
+      }
+  
+      const result = await apiResult.json();
+      return result.text;
     }
-}
+  }
+  
