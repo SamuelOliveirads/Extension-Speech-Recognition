@@ -67,7 +67,7 @@ class KoboldCppSttProvider {
 
         const server = textgenerationwebui_settings
                         .server_urls[textgen_types.KOBOLDCPP];
-        const url = `${server}/api/extra/transcribe`;
+        const url = `${server}extra/transcribe`;
 
         const apiResult = await fetch(url, {
         method: 'POST',
